@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Grace Cognitive Dashboard</title>
+
+  <!-- Link to static assets -->
+  <link rel="stylesheet" href="/static/css/style.css" />
+  <script src="/static/js/dashboard.js" defer></script>
+</head>
+<body>
+  <div id="login" class="grace-panel" style="max-width: 400px;">
+    <h2>Grace Authentication</h2>
+    <input type="text" id="username" placeholder="Username" />
+    <input type="password" id="password" placeholder="Password" />
+    <button onclick="login()">Authenticate</button>
+  </div>
+
+  <div id="dashboard" class="hidden">
+    <h2>Live Cognitive Map</h2>
+    <div id="cy" style="height: 70vh;"></div>
+
+    <div class="grid grid-cols-2">
+      <div class="grace-panel">
+        <h3>System Health</h3>
+        <pre id="healthData"></pre>
+      </div>
+      <div class="grace-panel">
+        <h3>Command Console</h3>
+        <select id="commandSelect">
+          <option value="trigger_audit">Trigger Audit</option>
+          <option value="force_rollback">Force Rollback</option>
+        </select>
+        <button onclick="executeCommand()">Execute</button>
+        <pre id="commandOutput"></pre>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

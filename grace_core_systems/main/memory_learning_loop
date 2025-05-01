@@ -1,0 +1,53 @@
+import threading
+import time
+from .decay_sandbox import DecaySandbox
+from .anchor_auditor import AnchorAuditor
+
+class LearningLoop:
+    def __init__(self, sandbox: DecaySandbox, auditor: AnchorAuditor):
+        self.sandbox = sandbox
+        self.auditor = auditor
+        self.running = False
+        self.thread = threading.Thread(target=self.run)
+        
+        # Learning parameters
+        self.reinforcement_boost = 1.2
+        self.entropy_penalty = 0.8
+        
+    def start(self):
+        self.running = True
+        self.thread.start()
+        
+    def stop(self):
+        self.running = False
+        self.thread.join()
+        
+    def run(self):
+        while self.running:
+            new_anchors, entropy_logs = self.sandbox.analyze_anchors()
+            
+            # Process learnings
+            for anchor in new_anchors:
+                self._reinforce_learning(anchor)
+                
+            for log in entropy_logs:
+                self._penalize_entropy(log)
+                
+            time.sleep(60)  # Run every minute
+            
+    def _reinforce_learning(self, anchor: Dict):
+        """Update Fusion with learned patterns"""
+        self.auditor.log_anchor_change("learned_reinforcement", anchor)
+        self.sandbox.fusion.anchor(
+            content=anchor['content'],
+            context={
+                'trust': anchor.get('trust', 0.7) * self.reinforcement_boost,
+                'source': 'decay_learner'
+            }
+        )
+        
+    def _penalize_entropy(self, log: Dict):
+        """Adjust future decay rates"""
+        self.auditor.log_anchor_change("entropy_penalty", log)
+        # Update Lightning decay formula
+        self.sandbox.lightning.decay_rate *= self.entropy_penalty
