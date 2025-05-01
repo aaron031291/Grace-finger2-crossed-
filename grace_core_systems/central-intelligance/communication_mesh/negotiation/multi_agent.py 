@@ -1,0 +1,102 @@
+##############################################
+# grace_core_systems/central_intelligence/modules/communications_mesh/negotiation/multi_agent_negotiation.py
+##############################################
+
+import threading
+import uuid
+from typing import List, Dict, Optional
+from datetime import datetime, timedelta
+from .negotiation_state import NegotiationState
+from .proposal_engine import ProposalEngine
+from .common_ground import CommonGroundFinder
+from .trust_reflector import TrustReflector
+from .ethical_constraints import EthicalValidator
+from .fallback_manager import FallbackManager
+
+class NegotiationSession:
+    def __init__(self, agent_pool: List[str], topic: str):
+        self.session_id = str(uuid.uuid4())
+        self.agents = agent_pool
+        self.topic = topic
+        self.stage = "proposal"
+        self.proposals = {}
+        self.start_time = datetime.now()
+        self.timeout = timedelta(minutes=5)
+        self.timer = threading.Timer(
+            self.timeout.total_seconds(), 
+            self._handle_timeout
+        )
+        self.timer.start()
+
+    def _handle_timeout(self):
+        FallbackManager.escalate_to_human(
+            self.session_id,
+            f"Timeout after {self.timeout}"
+        )
+        NegotiationState.update_state(
+            self.session_id,
+            "escalated"
+        )
+
+    def add_proposal(self, agent_id: str, proposal: Dict):
+        if EthicalValidator.check_ethics(proposal):
+            self.proposals[agent_id] = proposal
+        else:
+            EthicalValidator.flag_violation(agent_id, "Ethical constraint violation")
+
+    def progress_stage(self):
+        if self.stage == "proposal" and len(self.proposals) == len(self.agents):
+            self.stage = "evaluation"
+            return self._evaluate_proposals()
+        elif self.stage == "evaluation":
+            self.stage = "synthesis"
+            return self._synthesize_outcome()
+        return {"status": "invalid_stage"}
+
+    def _evaluate_proposals(self):
+        weighted_proposals = []
+        for agent_id, proposal in self.proposals.items():
+            trust_score = TrustReflector.compute_trust(agent_id, self.topic)
+            weighted_proposals.append({
+                **proposal,
+                "weight": trust_score
+            })
+        return {"stage": "evaluation", "proposals": weighted_proposals}
+
+    def _synthesize_outcome(self):
+        merged = CommonGroundFinder.synthesize_common_ground(
+            list(self.proposals.values())
+        if merged:
+            NegotiationState.update_state(self.session_id, "completed")
+            return {"status": "resolved", "outcome": merged}
+        else:
+            FallbackManager.escalate_to_human(
+                self.session_id,
+                "Irreconcilable differences"
+            )
+            return {"status": "escalated"}
+
+class NegotiationModule:
+    def __init__(self):
+        self.active_sessions = {}
+
+    def initiate_negotiation(self, agent_pool: List[str], topic: str) -> str:
+        session = NegotiationSession(agent_pool, topic)
+        self.active_sessions[session.session_id] = session
+        NegotiationState.start_session(session.session_id)
+        return session.session_id
+
+    def progress_stage(self, session_id: str) -> Dict:
+        if session_id not in self.active_sessions:
+            return {"error": "Invalid session ID"}
+        return self.active_sessions[session_id].progress_stage()
+
+    def resolve_outcome(self, session_id: str) -> Dict:
+        session = self.active_sessions.get(session_id)
+        if not session:
+            return {"error": "Invalid session ID"}
+        
+        if NegotiationState.get_state(session_id)["state"] == "completed":
+            return session._synthesize_outcome()
+        
+        return {"status": "pending"}
