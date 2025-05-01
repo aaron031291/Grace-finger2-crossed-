@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # internal_system_loop/ethical_filter.py
 
 from typing import Dict, List, Tuple
@@ -29,6 +29,7 @@ class TrustReflector:
     def penalize(agent_id: str, reason: List[str]):
         logging.warning(f"[Trust] Penalizing {agent_id} for: {', '.join(reason)}")
 
+
 class EthicSLAChecker:
     MAX_DECISION_TIME = 150  # milliseconds
     MIN_THROUGHPUT = 4500    # requests per minute per cluster node
@@ -55,9 +56,37 @@ class EthicSLAChecker:
 
         return passed, violations
     
-=======
+
 class EthicSLAChecker:
     MAX_DECISION_TIME = 150  # ms
     MIN_THROUGHPUT = 4500  # RPM per cluster node
     FALSE_POSITIVE_RATE = 0.01  # %
->>>>>>> 3f14cf4 (updtae)
+
+
+class EthicSLAChecker:
+    MAX_DECISION_TIME = 150  # milliseconds
+    MIN_THROUGHPUT = 4500    # requests per minute per cluster node
+    FALSE_POSITIVE_THRESHOLD = 0.01  # 1%
+
+    def evaluate(self, proposal: Dict, agent_id: str) -> Tuple[bool, List[str]]:
+        start_time = datetime.utcnow()
+
+        violations = []
+        if proposal.get("cost", 0) > 0.8:
+            violations.append("no_harm")
+        if "blackbox" in proposal.get("logic", {}):
+            violations.append("transparency")
+
+        passed = len(violations) == 0
+
+        # Log metrics
+        ETHICAL_DECISIONS.labels(result="passed" if passed else "failed").inc()
+        duration_ms = (datetime.utcnow() - start_time).total_seconds() * 1000
+        ETHICAL_DECISION_LATENCY.observe(duration_ms)
+
+        if not passed:
+            TrustReflector.penalize(agent_id, violations)
+
+        return passed, violations
+    
+
