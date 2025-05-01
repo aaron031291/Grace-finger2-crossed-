@@ -1,0 +1,217 @@
+# learning_whitelist.py
+
+import hashlib
+import json
+import logging
+import threading
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Dict, List, Optional
+from cryptography.fernet import Fernet
+from prometheus_client import Counter, Gauge, Histogram
+
+# Metrics
+WHITELIST_REQUESTS = Counter('whitelist_operations', 'Whitelist management operations', ['type'])
+VALIDATION_TIME = Histogram('whitelist_validation_time', 'Module validation duration')
+APPROVED_MODULES = Gauge('whitelist_active_modules', 'Currently approved learning modules')
+
+@dataclass
+class WhitelistEntry:
+    module_id: str
+    content_hash: str
+    validation_status: str  # pending/approved/restricted/revoked
+    signatures: List[str]
+    first_proposed: datetime
+    last_validated: datetime
+
+class LearningWhitelist:
+    def __init__(self, 
+                 sandbox_env,
+                 mentor_lens,
+                 evolution_mandate):
+        self.registry: Dict[str, WhitelistEntry] = {}
+        self.lock = threading.Lock()
+        self.sandbox = sandbox_env
+        self.mentor = mentor_lens
+        self.mandate = evolution_mandate
+        self.crypto = Fernet(Fernet.generate_key())
+        
+        # Security policies
+        self.validation_policies = {
+            "required_sandbox_passes": 3,
+            "min_trust_score": 0.85,
+            "max_ethical_risk": 0.2
+        }
+
+    def propose_module(self, module_code: str, proposer_id: str) -> Optional[str]:
+        """Submit new module for whitelist consideration"""
+        with self.lock:
+            module_id = self._generate_module_id(module_code)
+            if module_id in self.registry:
+                WHITELIST_REQUESTS.labels(type='duplicate').inc()
+                return None
+
+            entry = WhitelistEntry(
+                module_id=module_id,
+                content_hash=self._hash_content(module_code),
+                validation_status="pending",
+                signatures=[],
+                first_proposed=datetime.utcnow(),
+                last_validated=datetime.utcnow()
+            )
+            self.registry[module_id] = entry
+            WHITELIST_REQUESTS.labels(type='proposal').inc()
+            
+            # Async validation
+            threading.Thread(target=self._validate_module, args=(module_id,)).start()
+            
+            return module_id
+
+    def _validate_module(self, module_id: str):
+        """Comprehensive module validation pipeline"""
+        with self.lock:
+            entry = self.registry.get(module_id)
+            if not entry or entry.validation_status != "pending":
+                return
+
+        try:
+            # Phase 1: Sandbox Validation
+            sandbox_results = []
+            for _ in range(self.validation_policies["required_sandbox_passes"]):
+                session_id = self.sandbox.create_session(
+                    intent="whitelist_validation",
+                    payload={"module_id": module_id}
+                )
+                result = self.sandbox.execute(session_id)
+                sandbox_results.append(result)
+                if result['status'] != "success":
+                    break
+
+            # Phase 2: Ethical Validation
+            ethical_approval = self.mentor.ethical_review(
+                module_id=module_id,
+                sandbox_results=sandbox_results
+            )
+            
+            # Phase 3: Evolutionary Impact Assessment
+            impact_score = self.mandate.assess_impact(
+                module_id,
+                sandbox_results
+            )
+
+            # Final Decision
+            with self.lock:
+                if (all(r['status'] == "success" for r in sandbox_results) and
+                    ethical_approval['risk_score'] <= self.validation_policies["max_ethical_risk"] and
+                    impact_score >= self.validation_policies["min_trust_score"]):
+                    self._approve_module(module_id)
+                else:
+                    self._restrict_module(module_id)
+                    
+        except Exception as e:
+            logging.error(f"Validation failed for {module_id}: {str(e)}")
+            self._restrict_module(module_id)
+
+    def _approve_module(self, module_id: str):
+        """Finalize module approval with cryptographic signing"""
+        with self.lock:
+            entry = self.registry[module_id]
+            entry.validation_status = "approved"
+            entry.signatures.append(
+                self._sign_content(entry.content_hash)
+            )
+            entry.last_validated = datetime.utcnow()
+            APPROVED_MODULES.inc()
+            WHITELIST_REQUESTS.labels(type='approval').inc()
+
+    def _restrict_module(self, module_id: str):
+        """Mark module as unsafe for use"""
+        with self.lock:
+            self.registry[module_id].validation_status = "restricted"
+            WHITELIST_REQUESTS.labels(type='restriction').inc()
+
+    def is_approved(self, module_id: str) -> bool:
+        """Check if module is currently whitelisted"""
+        with self.lock:
+            entry = self.registry.get(module_id)
+            return entry and entry.validation_status == "approved"
+
+    def revoke_module(self, module_id: str) -> bool:
+        """Remove module from whitelist"""
+        with self.lock:
+            if module_id in self.registry:
+                self.registry[module_id].validation_status = "revoked"
+                WHITELIST_REQUESTS.labels(type='revocation').inc()
+                APPROVED_MODULES.dec()
+                return True
+            return False
+
+    def _generate_module_id(self, code: str) -> str:
+        """Create deterministic module ID"""
+        return hashlib.sha3_256(code.encode()).hexdigest()[:16]
+
+    def _hash_content(self, content: str) -> str:
+        """Generate content-addressable hash"""
+        return hashlib.blake2b(content.encode()).hexdigest()
+
+    def _sign_content(self, content_hash: str) -> str:
+        """Cryptographically sign approved content"""
+        return self.crypto.encrypt(content_hash.encode()).decode()
+
+    def _verify_signature(self, signature: str, content_hash: str) -> bool:
+        """Validate cryptographic signature"""
+        try:
+            return self.crypto.decrypt(signature.encode()).decode() == content_hash
+        except:
+            return False
+
+    def save_registry(self, path: str):
+        """Persist whitelist state"""
+        with self.lock:
+            data = {
+                "modules": [
+                    {**entry.__dict__, "first_proposed": entry.first_proposed.isoformat(),
+                     "last_validated": entry.last_validated.isoformat()}
+                    for entry in self.registry.values()
+                ]
+            }
+            with open(path, 'w') as f:
+                json.dump(data, f)
+
+    def load_registry(self, path: str):
+        """Load whitelist state"""
+        with self.lock:
+            with open(path, 'r') as f:
+                data = json.load(f)
+                for entry in data["modules"]:
+                    entry['first_proposed'] = datetime.fromisoformat(entry['first_proposed'])
+                    entry['last_validated'] = datetime.fromisoformat(entry['last_validated'])
+                    self.registry[entry['module_id']] = WhitelistEntry(**entry)
+
+# Example Usage
+if __name__ == "__main__":
+    # Mock dependencies
+    class MockSandbox:
+        def create_session(self, intent, payload): return "session_123"
+        def execute(self, session_id): return {"status": "success"}
+
+    class MockMentor:
+        def ethical_review(self, module_id, results): return {"risk_score": 0.1}
+
+    class MockMandate:
+        def assess_impact(self, module_id, results): return 0.9
+
+    whitelist = LearningWhitelist(MockSandbox(), MockMentor(), MockMandate())
+    
+    # Propose new module
+    module_code = "def optimized(): pass"
+    module_id = whitelist.propose_module(module_code, "AI_TEAM_01")
+    
+    # Check approval status
+    print(f"Module approved: {whitelist.is_approved(module_id)}")  # False initially
+    
+    # Let async validation complete
+    import time
+    time.sleep(1)
+    
+    print(f"Module approved: {whitelist.is_approved(module_id)}")  # True after validation
