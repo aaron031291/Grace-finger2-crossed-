@@ -211,9 +211,15 @@ if results["exit_code"] == 0:
     print(f"Discovered new capability: {results['metrics']}")
 else:
 <<<<<<< HEAD
+<<<<<<< HEAD
     print(f"Contained failure: {results['error_fingerprint']}") 
     
 On success or failure, pipe results into evolution_mandate.track_degradation(...).
 =======
     print(f"Contained failure: {results['error_fingerprint']}")
 >>>>>>> 0b90e22 (update)
+=======
+    print(f"Contained failure: {results['error_fingerprint']}") 
+    
+On success or failure, pipe results into evolution_mandate.track_degradation(...).
+>>>>>>> 63683d4 (updated)
