@@ -210,4 +210,6 @@ results = witness.monitor_pod(pod_id)
 if results["exit_code"] == 0:
     print(f"Discovered new capability: {results['metrics']}")
 else:
-    print(f"Contained failure: {results['error_fingerprint']}")
+    print(f"Contained failure: {results['error_fingerprint']}") 
+    
+On success or failure, pipe results into evolution_mandate.track_degradation(...).
