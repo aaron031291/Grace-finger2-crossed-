@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # internal_system_loop/ethical_filter.py
 
 from typing import Dict, List, Tuple
@@ -54,3 +55,9 @@ class EthicSLAChecker:
 
         return passed, violations
     
+=======
+class EthicSLAChecker:
+    MAX_DECISION_TIME = 150  # ms
+    MIN_THROUGHPUT = 4500  # RPM per cluster node
+    FALSE_POSITIVE_RATE = 0.01  # %
+>>>>>>> 3f14cf4 (updtae)
