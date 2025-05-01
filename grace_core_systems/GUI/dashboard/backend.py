@@ -4,7 +4,10 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, validator
 from typing import Dict, List, Optional
+<<<<<<< HEAD
 from display_config import active_config, DisplayConfig
+=======
+>>>>>>> b07b7bc (update)
 import jwt
 import redis
 import json
@@ -171,6 +174,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         status_code=exc.status_code,
         content={"detail": exc.detail},
         headers={"X-Grace-Error": "true"}
+<<<<<<< HEAD
     )
     @app.get("/display-config")
 async def get_display_config():
@@ -191,3 +195,6 @@ from layout_controller import router as layout_router
 app.include_router(layout_router)
 
 http://localhost:8000/docs
+=======
+    )
+>>>>>>> b07b7bc (update)
