@@ -18,7 +18,7 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 redis_pool = redis.ConnectionPool(host='redis', port=6379, db=0)
-SECRET_KEY = "grace_enterprise_2025"  # In prod, use proper secrets management
+SECRET_KEY = "grace_enterprise_2025"
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
@@ -43,7 +43,7 @@ class CognitiveMapRequest(BaseModel):
     @validator('depth')
     def validate_depth(cls, v):
         if v < 1 or v > 5:
-            raise ValueError("Depth must be 1-5")
+            raise ValueError("Depth must be 1–5")
         return v
 
 class CommandExecution(BaseModel):
@@ -82,18 +82,15 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         token_data = TokenData(**payload)
     except jwt.PyJWTError:
         raise credentials_exception
-    
-    # In production, fetch user from database
+
     user = User(username=username, roles=payload.get("roles", ["viewer"]))
     return user
 
 # Endpoints
 @app.post("/token", response_model=Dict[str, str])
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    # Demo authentication - replace with real implementation
     if form_data.username != "admin" or form_data.password != "grace2025":
         raise HTTPException(status_code=400, detail="Incorrect credentials")
-    
     access_token = create_access_token({"sub": form_data.username, "roles": ["admin"]})
     refresh_token = create_refresh_token({"sub": form_data.username})
     return {
@@ -107,16 +104,13 @@ async def cognitive_map_ws(websocket: WebSocket):
     await websocket.accept()
     token = websocket.query_params.get("token")
     user = await get_current_user(token)
-    
     if not user:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
-    
     try:
         redis_conn = get_redis()
         pubsub = redis_conn.pubsub()
         await pubsub.subscribe("cognitive_map_updates")
-        
         async for message in pubsub.listen():
             if message["type"] == "message":
                 await websocket.send_text(message["data"].decode())
@@ -131,8 +125,6 @@ async def get_module_health(user: User = Depends(get_current_user)):
     cached = redis_conn.get("module_health")
     if cached:
         return json.loads(cached)
-    
-    # Demo data - integrate with real KPIs
     health_data = {
         "kpis": {"uptime_percent": 99.95, "error_rate": 0.2},
         "diagnostics": {"last_check": datetime.utcnow().isoformat()},
@@ -142,28 +134,12 @@ async def get_module_health(user: User = Depends(get_current_user)):
     return health_data
 
 @app.post("/execute-command")
-async def execute_command(
-    cmd: CommandExecution, 
-    user: User = Depends(get_current_user)
-):
+async def execute_command(cmd: CommandExecution, user: User = Depends(get_current_user)):
     if "admin" not in user.roles:
         raise HTTPException(status_code=403, detail="Insufficient privileges")
-    
-    # Demo command handling
     result = f"Executed {cmd.command} with params {cmd.parameters}"
     logger.info(f"Command executed by {user.username}: {result}")
     return {"status": "success", "result": result}
-
-# Security Utilities
-def create_access_token(data: dict):
-    expires = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    data.update({"exp": expires, "token_type": "access"})
-    return jwt.encode(data, SECRET_KEY, algorithm=ALGORITHM)
-
-def create_refresh_token(data: dict):
-    expires = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    data.update({"exp": expires, "token_type": "refresh"})
-    return jwt.encode(data, SECRET_KEY, algorithm=ALGORITHM)
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
@@ -172,7 +148,8 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         content={"detail": exc.detail},
         headers={"X-Grace-Error": "true"}
     )
-    @app.get("/display-config")
+
+@app.get("/display-config")
 async def get_display_config():
     return active_config.dict()
 
@@ -182,12 +159,11 @@ async def update_config(new_config: dict):
     active_config = DisplayConfig(**new_config)
     return {"status": "updated"}
 
+# Routers
 from interface_router import router as interface_router
-app.include_router(interface_router)
 from interface_control_router import router as interface_control_router
-app.include_router(interface_control_router)
-
 from layout_controller import router as layout_router
-app.include_router(layout_router)
 
-http://localhost:8000/docs
+app.include_router(interface_router)
+app.include_router(interface_control_router)
+app.include_router(layout_router)
