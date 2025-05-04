@@ -1,10 +1,14 @@
-from grace_core_systems.central_intelligence import core_launcher
+import sys
+sys.path.append("./grace_core_systems")
 
+from central_intelligence import core_launcher
+from flask import Flask
+
+# Run Grace system logic
 if __name__ == "__main__":
     core_launcher.run()
 
-from flask import Flask
-
+# Initialize basic web app status check
 app = Flask(__name__)
 
 @app.route("/")
