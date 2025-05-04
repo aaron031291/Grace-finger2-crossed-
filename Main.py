@@ -3,43 +3,46 @@
 import sys
 import logging
 from fastapi import FastAPI
+
 from grace_core_systems.central_intelligence import core
 from grace_core_systems.GUI.dashboard.backend import dashboard_app
 from grace_core_systems.GUI.display_config import active_config
 
-# Initialize logging
+# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=[logging.StreamHandler(sys.stdout)]
 )
 
 logger = logging.getLogger(__name__)
 logger.info("Launching Grace v1-core-stable...")
 
-# Initialize FastAPI app
-app = FastAPI(title="Grace Core Systems", version="v1-core-stable")
+# FastAPI initialization
+app = FastAPI(
+    title="Grace Core Systems",
+    version="v1-core-stable",
+    description="AI Sovereignty. Ethical Intelligence. Modular Autonomy."
+)
 
-# Mount dashboard
+# Mount GUI dashboard
 app.mount("/dashboard", dashboard_app)
 
-# Load system configuration
-logger.info(f"Active display configuration: {active_config}")
+# Display current visual configuration
+logger.info(f"Display config: {active_config}")
 
-# Boot up Grace's central intelligence core
+# Core boot sequence
 @app.on_event("startup")
-async def boot_grace_core():
-    logger.info("Boot sequence initiated.")
+async def launch_grace():
+    logger.info("Booting Grace Central Intelligence Core...")
     try:
         await core.initialize_core()
         logger.info("Grace Core initialized successfully.")
-    except Exception as e:
-        logger.error(f"Error during core boot: {e}")
+    except Exception as error:
+        logger.error(f"Core boot failure: {error}")
         raise
 
-# Optional root ping
+# Root ping
 @app.get("/")
 def index():
     return {
@@ -47,6 +50,7 @@ def index():
         "version": "v1-core-stable"
     }
 
+# Local test mode
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run("grace_core_systems.main:app", host="0.0.0.0", port=8000, reload=True)
