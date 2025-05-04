@@ -1,0 +1,4 @@
+flask
+gunicorn
+redis
+sqlite3  # optional, Python has built-in support via sqlite3 module
