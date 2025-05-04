@@ -1,4 +1,0 @@
-flask
-gunicorn
-redis
-sqlite3  # Optional; built into Python but listed for clarity
