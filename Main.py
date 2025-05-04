@@ -3,54 +3,54 @@
 import sys
 import logging
 from fastapi import FastAPI
-
 from grace_core_systems.central_intelligence import core
 from grace_core_systems.GUI.dashboard.backend import dashboard_app
 from grace_core_systems.GUI.display_config import active_config
+from grace_core_systems.central_intelligence.core import router as core_router
 
-# Setup logging
+# ========== LOGGING SETUP ==========
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)]
 )
-
 logger = logging.getLogger(__name__)
-logger.info("Launching Grace v1-core-stable...")
+logger.info(">>> Launching Grace v1-core-stable...")
 
-# FastAPI initialization
+# ========== FASTAPI APP SETUP ==========
 app = FastAPI(
     title="Grace Core Systems",
     version="v1-core-stable",
     description="AI Sovereignty. Ethical Intelligence. Modular Autonomy."
 )
 
-# Mount GUI dashboard
+# ========== GUI DASHBOARD ==========
 app.mount("/dashboard", dashboard_app)
+logger.info(f">>> Display config loaded: {active_config}")
 
-# Display current visual configuration
-logger.info(f"Display config: {active_config}")
-
-# Core boot sequence
+# ========== STARTUP LOGIC ==========
 @app.on_event("startup")
-async def launch_grace():
-    logger.info("Booting Grace Central Intelligence Core...")
+async def startup_event():
+    logger.info(">>> Grace Central Intelligence booting...")
     try:
         await core.initialize_core()
-        logger.info("Grace Core initialized successfully.")
-    except Exception as error:
-        logger.error(f"Core boot failure: {error}")
+        logger.info(">>> Grace Core successfully initialized.")
+    except Exception as e:
+        logger.error(f"!!! Grace Core startup failed: {e}")
         raise
 
-# Root ping
+# ========== ROOT HEALTH PING ==========
 @app.get("/")
-def index():
+def root_status():
     return {
         "status": "Grace online",
         "version": "v1-core-stable"
     }
 
-# Local test mode
+# ========== CENTRAL INTELLIGENCE ROUTER ==========
+app.include_router(core_router)
+
+# ========== LOCAL RUNNING INTERFACE ==========
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("grace_core_systems.main:app", host="0.0.0.0", port=8000, reload=True)
