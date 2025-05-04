@@ -8,12 +8,15 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy app code
+# Copy the entire app source code
 COPY . .
 
-# Expose the port
+# Add grace_core_systems to Python path so modules can be found
+ENV PYTHONPATH="${PYTHONPATH}:/app/grace_core_systems"
+
+# Expose the app port
 EXPOSE 8000
 
-# Run the application
-CMD ["python", "main.py"] 
+# Set unbuffered logging and run the app
 ENV PYTHONUNBUFFERED=1
+CMD ["python", "main.py"]
