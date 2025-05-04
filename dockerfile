@@ -10,8 +10,8 @@ COPY . .
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Expose Flask default port
+# Expose the port Grace will run on
 EXPOSE 8000
 
-# Run Grace via Flask
+# Define the default command to run the app
 CMD ["python", "main.py"]
