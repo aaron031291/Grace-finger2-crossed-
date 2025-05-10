@@ -11,26 +11,20 @@ import json
 import logging
 from datetime import datetime, timedelta
 from functools import lru_cache
-import re
 import os
 
-# Optional fallback if display_config.py is missing
-class DisplayConfig(BaseModel):
-    theme: str = "dark"
-    layout: str = "grid"
-    show_logs: bool = True
-
-active_config = DisplayConfig()
+# Grace Dashboard Bootstrap
+print(f"[Grace Dashboard] Booting at {datetime.utcnow().isoformat()} in mode: {os.getenv('GRACE_ENV', 'sandbox')}")
 
 # Configuration
 app = FastAPI()
 
-# Static directory fallback
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+STATIC_DIR = Path(__file__).resolve().parent.parent / "GUI" / "static"
 if not STATIC_DIR.exists():
-    STATIC_DIR = Path(__file__).resolve().parents[2] / "grace_core_systems/GUI/static"
+    raise RuntimeError(f"[ERROR] Static directory not found: {STATIC_DIR}")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
+# Redis + JWT
 redis_pool = redis.ConnectionPool(host='redis', port=6379, db=0)
 SECRET_KEY = "grace_enterprise_2025"
 ALGORITHM = "HS256"
@@ -41,6 +35,13 @@ logger = logging.getLogger("grace-dashboard")
 logger.setLevel(logging.INFO)
 
 # Models
+class DisplayConfig(BaseModel):
+    theme: str = "dark"
+    layout: str = "grid"
+    show_logs: bool = True
+
+active_config = DisplayConfig()
+
 class User(BaseModel):
     username: str
     roles: List[str] = ["viewer"]
@@ -71,7 +72,7 @@ class CommandExecution(BaseModel):
             raise ValueError(f"Invalid command. Allowed: {allowed}")
         return v
 
-# Auth
+# Auth + Redis Cache
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 @lru_cache()
@@ -92,7 +93,20 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-# Endpoints
+# Token generators
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire.timestamp()})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def create_refresh_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode.update({"exp": expire.timestamp()})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+# Auth endpoint
 @app.post("/token", response_model=Dict[str, str])
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     if form_data.username != "admin" or form_data.password != "grace2025":
@@ -103,6 +117,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         "token_type": "bearer"
     }
 
+# WebSocket for live cognitive map feed
 @app.websocket("/ws/cognitive-map")
 async def cognitive_map_ws(websocket: WebSocket):
     await websocket.accept()
@@ -114,15 +129,16 @@ async def cognitive_map_ws(websocket: WebSocket):
     try:
         redis_conn = get_redis()
         pubsub = redis_conn.pubsub()
-        await pubsub.subscribe("cognitive_map_updates")
-        async for message in pubsub.listen():
+        pubsub.subscribe("cognitive_map_updates")
+        for message in pubsub.listen():
             if message["type"] == "message":
                 await websocket.send_text(message["data"].decode())
     except Exception as e:
         logger.error(f"WebSocket error: {str(e)}")
     finally:
-        await pubsub.unsubscribe()
+        pubsub.unsubscribe()
 
+# Module health endpoint
 @app.get("/module-health", response_model=Dict[str, Dict])
 async def get_module_health(user: User = Depends(get_current_user)):
     redis_conn = get_redis()
@@ -137,6 +153,7 @@ async def get_module_health(user: User = Depends(get_current_user)):
     redis_conn.setex("module_health", 300, json.dumps(health))
     return health
 
+# Admin command execution
 @app.post("/execute-command")
 async def execute_command(cmd: CommandExecution, user: User = Depends(get_current_user)):
     if "admin" not in user.roles:
@@ -145,6 +162,7 @@ async def execute_command(cmd: CommandExecution, user: User = Depends(get_curren
     logger.info(f"Command executed by {user.username}: {result}")
     return {"status": "success", "result": result}
 
+# Exception handling
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
@@ -153,6 +171,7 @@ async def http_exception_handler(request: Request, exc: HTTPException):
         headers={"X-Grace-Error": "true"}
     )
 
+# Config API
 @app.get("/display-config")
 async def get_display_config():
     return active_config.dict()
@@ -163,7 +182,7 @@ async def update_config(new_config: dict):
     active_config = DisplayConfig(**new_config)
     return {"status": "updated"}
 
-# Routers
+# Router includes
 from interface_router import router as interface_router
 from interface_control_router import router as interface_control_router
 from layout_controller import router as layout_router
@@ -172,15 +191,7 @@ app.include_router(interface_router)
 app.include_router(interface_control_router)
 app.include_router(layout_router)
 
-# Token helpers
-def create_access_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-def create_refresh_token(data: dict):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+# Local entry for Railway
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("dashboard.backend:app", host="0.0.0.0", port=8080, reload=False)
