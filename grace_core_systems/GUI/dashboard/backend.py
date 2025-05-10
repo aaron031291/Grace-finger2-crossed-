@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, validator
 from typing import Dict, List, Optional
+from pathlib import Path
 import jwt
 import redis
 import json
@@ -11,6 +12,7 @@ import logging
 from datetime import datetime, timedelta
 from functools import lru_cache
 import re
+import os
 
 # Optional fallback if display_config.py is missing
 class DisplayConfig(BaseModel):
@@ -22,7 +24,12 @@ active_config = DisplayConfig()
 
 # Configuration
 app = FastAPI()
-app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Static directory fallback
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+if not STATIC_DIR.exists():
+    STATIC_DIR = Path(__file__).resolve().parents[2] / "grace_core_systems/GUI/static"
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 redis_pool = redis.ConnectionPool(host='redis', port=6379, db=0)
 SECRET_KEY = "grace_enterprise_2025"
@@ -59,9 +66,9 @@ class CommandExecution(BaseModel):
 
     @validator('command')
     def validate_command(cls, v):
-        allowed_commands = {"trigger_audit", "force_rollback", "module_restart"}
-        if v not in allowed_commands:
-            raise ValueError(f"Invalid command. Allowed: {allowed_commands}")
+        allowed = {"trigger_audit", "force_rollback", "module_restart"}
+        if v not in allowed:
+            raise ValueError(f"Invalid command. Allowed: {allowed}")
         return v
 
 # Auth
@@ -76,33 +83,23 @@ def get_redis():
         raise HTTPException(status_code=503, detail="Cache unavailable")
 
 async def get_current_user(token: str = Depends(oauth2_scheme)):
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
         if username is None:
-            raise credentials_exception
-        token_data = TokenData(**payload)
+            raise HTTPException(status_code=401, detail="Invalid credentials")
+        return User(username=username, roles=payload.get("roles", ["viewer"]))
     except jwt.PyJWTError:
-        raise credentials_exception
-
-    user = User(username=username, roles=payload.get("roles", ["viewer"]))
-    return user
+        raise HTTPException(status_code=401, detail="Invalid credentials")
 
 # Endpoints
 @app.post("/token", response_model=Dict[str, str])
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     if form_data.username != "admin" or form_data.password != "grace2025":
         raise HTTPException(status_code=400, detail="Incorrect credentials")
-    access_token = create_access_token({"sub": form_data.username, "roles": ["admin"]})
-    refresh_token = create_refresh_token({"sub": form_data.username})
     return {
-        "access_token": access_token,
-        "refresh_token": refresh_token,
+        "access_token": create_access_token({"sub": form_data.username, "roles": ["admin"]}),
+        "refresh_token": create_refresh_token({"sub": form_data.username}),
         "token_type": "bearer"
     }
 
@@ -122,7 +119,7 @@ async def cognitive_map_ws(websocket: WebSocket):
             if message["type"] == "message":
                 await websocket.send_text(message["data"].decode())
     except Exception as e:
-        logger.error(f"WS error: {str(e)}")
+        logger.error(f"WebSocket error: {str(e)}")
     finally:
         await pubsub.unsubscribe()
 
@@ -132,13 +129,13 @@ async def get_module_health(user: User = Depends(get_current_user)):
     cached = redis_conn.get("module_health")
     if cached:
         return json.loads(cached)
-    health_data = {
+    health = {
         "kpis": {"uptime_percent": 99.95, "error_rate": 0.2},
         "diagnostics": {"last_check": datetime.utcnow().isoformat()},
         "modules": ["core", "diagnostics", "audit"]
     }
-    redis_conn.setex("module_health", 300, json.dumps(health_data))
-    return health_data
+    redis_conn.setex("module_health", 300, json.dumps(health))
+    return health
 
 @app.post("/execute-command")
 async def execute_command(cmd: CommandExecution, user: User = Depends(get_current_user)):
