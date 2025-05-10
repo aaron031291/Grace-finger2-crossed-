@@ -4,7 +4,6 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, validator
 from typing import Dict, List, Optional
-from display_config import active_config, DisplayConfig
 import jwt
 import redis
 import json
@@ -12,6 +11,14 @@ import logging
 from datetime import datetime, timedelta
 from functools import lru_cache
 import re
+
+# Optional fallback if display_config.py is missing
+class DisplayConfig(BaseModel):
+    theme: str = "dark"
+    layout: str = "grid"
+    show_logs: bool = True
+
+active_config = DisplayConfig()
 
 # Configuration
 app = FastAPI()
@@ -167,3 +174,16 @@ from layout_controller import router as layout_router
 app.include_router(interface_router)
 app.include_router(interface_control_router)
 app.include_router(layout_router)
+
+# Token helpers
+def create_access_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+
+def create_refresh_token(data: dict):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
