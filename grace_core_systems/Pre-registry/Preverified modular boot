@@ -1,0 +1,36 @@
+from pathlib import Path
+import importlib
+import json
+import traceback
+
+# Define module paths in the correct boot sequence
+BOOT_SEQUENCE = [
+    "pre_registry.pre_registry_entry",
+    "grace_core_systems.registry.registry_system",
+    "grace_core_systems.librarian.librarian",
+    "grace_core_systems.data_storage.storage_controller",
+    "grace_core_systems.lightning_memory.lightning_engine",
+    "grace_core_systems.messagebus.message_router",
+    "grace_core_systems.grace_core.central_intelligence"
+]
+
+# Boot log to track module status
+boot_log = {}
+
+for module_path in BOOT_SEQUENCE:
+    try:
+        importlib.import_module(module_path)
+        boot_log[module_path] = "✅ Loaded Successfully"
+    except Exception as e:
+        boot_log[module_path] = {
+            "❌ Error": str(e),
+            "Traceback": traceback.format_exc()
+        }
+
+# Save results to log file
+log_dir = Path("grace_logs")
+log_dir.mkdir(exist_ok=True)
+with open(log_dir / "boot_sequence_log.json", "w") as f:
+    json.dump(boot_log, f, indent=4)
+
+boot_log  # Return the boot results
